@@ -1,0 +1,393 @@
+  // ISBN utilities: hyphenation, check digit related routines
+  // manage isbn dataset (needed for hyphenation only) by means of datasets.flx
+
+  // Interface (iV -> iV)
+  // hyphenate
+  //
+  // checkdigit10
+  // testisbn10
+  // toisbn10
+  //
+  // checkdigit13
+  // testisbn13
+  // toisbn13
+
+  // Kommando-Interface (#ucc -> message)
+  // [hyphenate] <ISBN13>
+  // checkdigit10 <ISBN13>
+  // checkdigit13 <ISBN13>
+  //
+  // $prefix=https://www.isbn-international.org/range_file_generation
+  // wird genutzt fuer datasets.flx:
+  // load [<Dateiname>]
+  // cleanup
+  // meta
+  // inspect
+
+var #ucc (f" ")
+ins $cmd
+var ""
+ins #ucc
+
+perform psds_INIT
+
+perform isbnutils_INIT
+
+var $cmd (b" " f" ")
+spaces
+ins $arg
+
+var $cmd
+if "hyphenate" var $arg;jump hyphenate
+if "checkdigit10" var $arg;jump checkdigit10
+if "checkdigit13" var $arg;jump checkdigit13
+
+var $cmd
+if "inspect" jump inspect
+if "meta" jump meta
+if "load" jump load
+if "cleanup" jump cleanup
+
+var $cmd
+if "" end
+
+
+  /// ISBN-13 in der iV wird mit regelgerechten Strichen versehen
+:hyphenate
+ins _x_X_
+ins _-__
+ins _ __
+ // nach hinten padden
+var +"?????????????"
+var (0,13)
+ins $test
+
+if not $prefix perform isbnutils_INIT
+
+var $psds_psr "_hyphenate_init" ";"\ins $psds_psr
+var $prefix
+jump psds_gettoken
+:_hyphenate_init
+var $psds_result
+if "" var "Keine ISBN-Daten hinterlegt?" n "Verwaltung: 'load' / 'inspect' / 'cleanup'";jump err
+ins $token
+
+var $PSDS_Store
+if "" var "~z1"
+ins $qr
+var $token "#"
+ins #ucc
+
+var "1" " " $qr " _" #ucc $test
+qrix
+var (b"#ucc")
+if "" var "Keine ISBN-Daten hinterlegt?" n "Verwaltung: 'load' / 'inspect' / 'cleanup'";jump err
+
+ins $line
+var (e"=>")
+ins $vgl
+if not =$test var "Unbekanntes Praefix";jump err
+
+var $line (b"=>" b"(" e")")
+ins $len
+if "" var "Got lost (1)";jump err
+z =
+if z<1 var "Nicht nutzbar (1): " $len;jump err
+
+var $line (b"=>" e"(")
+ins $trg
+if #uDB var "I. Praefix ist " $trg;show iV
+
+var $test (3,0)
+:eatupA
+var (1,0)
+z-1
+if z>0 jump eatupA
+ins $rest
+
+var $trg $rest
+ins $test
+if #uDB var "II. Teste nun " $test;show iV
+
+var "-2" " " $qr " _" #ucc $test
+qrix
+var (e"^T" b"#ucc" b"=")
+ins $line
+
+var (e"(" e"-")
+ins $rs
+
+var $line (e"(" b"-")
+ins $re
+
+var $line (b"(" e")")
+ins $len
+if "" var "Got lost (2)";jump err
+z =
+if z<1 var "Nicht nutzbar (2): " $len;jump err
+
+var ""
+ins $ra
+var $rest
+:eatupB
+var $rest (0,1)
+ins $x
+var $ra $x
+ins $ra
+var $rest (1,0)
+ins $rest
+z-1
+if z>0 jump eatupB
+ins $rest
+
+var '"' $ra '"'
+ins #ucc
+var $rs
+if >#ucc var "Lower bound violation: " $rs " " $ra " " $re;jump err
+var $re
+if <#ucc var "Upper bound violation: " $rs " " $ra " " $re;jump err
+
+if #uDB var "III. collected so far: " $trg $ra;show iV
+
+var ""
+ins #ucc
+
+var $rest "!" (e"?!")
+ins $x
+var $rest (0,-1)
+ins $y
+var $trg $ra "-" $x "-" $y
+ins $trg
+
+if #uDB var "IV. complete: " $trg;show iV
+var $trg
+if $isbnutils_psr jump _isbnutils_psr
+return
+show iV
+end
+
+:isbnutils_INIT
+$prefix=https://www.isbn-international.org/range_file_generation
+$default_filename=RangeMessage.dat
+return
+
+
+:testisbn10
+ins $
+var $isbnutils_psr "_testisbn10_psr" ";"\ins $isbnutils_psr
+var $
+jump checkdigit10
+:_testisbn10_psr
+if #uDB var "calculated checksum: " $isbnutils_result n "provided check digit: " $isbnutils_remainder;mess
+var $isbnutils_result
+if =$isbnutils_remainder var "";return
+var "checksum error"
+return
+
+
+:toisbn10
+if not "978-" var "Impossible";end
+var +"!"
+var (b"978-" e"?!")
+ins $trunk
+var $isbnutils_psr "_toisbn10_psr" ";"\ins $isbnutils_psr
+var $trunk
+jump checkdigit10
+:_toisbn10_psr
+var $trunk $isbnutils_result
+return
+mess
+end
+
+
+:checkdigit10
+ins _-__
+ins _ __
+ins $rest
+var "123456789"
+ins $pattern
+var "0"
+ins $result
+:checkdigit10_loop
+var $rest (0,1)
+z =
+var $pattern (0,1)
+z *
+var $result
+z +
+var z
+ins $result
+
+var $rest (1,0)
+ins $rest
+var $pattern (1,0)
+ins $pattern
+if not "" jump checkdigit10_loop
+
+var $rest
+ins $isbnutils_remainder
+
+var $result
+z =
+z % 11
+ // z * -1
+ // z + 11
+ // z % 11
+var z
+if z=10 var "X"
+ins $result
+if $isbnutils_psr jump _isbnutils_psr
+return
+
+var "Check digit is: " $result
+mess
+end
+
+
+:testisbn13
+ins $
+var $isbnutils_psr "_testisbn13_psr" ";"\ins $isbnutils_psr
+var $
+jump checkdigit13
+:_testisbn13_psr
+var $isbnutils_result
+if =$isbnutils_remainder var "";return
+var "checksum error"
+return
+
+:toisbn13
+var +"!"
+var (e"?!")
+ins $trunk
+var "978-" $trunk
+ins $trunk
+var $isbnutils_psr "_toisbn13_psr" ";"\ins $isbnutils_psr
+var $trunk
+jump checkdigit13
+:_toisbn13_psr
+var $trunk $isbnutils_result
+return
+mess
+end
+
+:checkdigit13
+ins _-__
+ins _ __
+ins $rest
+var "xxxxxx"
+ins $pattern
+z=0
+:checkdigit13_loop
+var $rest (0,1)
+z+
+var $rest (1,1)
+z+
+z+
+z+
+var $rest (2,0)
+ins $rest
+var $pattern (1,0)
+ins $pattern
+if not "" jump checkdigit13_loop
+
+var $rest
+ins $isbnutils_remainder
+
+z % 10
+z * -1
+z + 10
+z % 10
+var z
+
+if $isbnutils_psr jump _isbnutils_psr
+return
+var "Check digit is: " z
+mess
+end
+
+
+:err
+ansi
+mess
+var ""
+ins #ucc
+return
+end
+
+
+  // pseudoreturn
+:_isbnutils_psr
+ins $isbnutils_result
+var $isbnutils_psr (e";")
+ins $isbnutils_jmp
+var $isbnutils_psr (b";")
+ins $isbnutils_psr
+var $isbnutils_jmp
+jump
+
+var "FAIL (isbnutils_psr to :" $isbnutils_jmp " with isbnutils_result " $isbnutils_result ")!"
+ansi
+mess
+end
+
+
+ // keine Unterprogramme
+
+:inspect
+var $prefix
+perform psds_gettoken
+perform psds_inspect_token
+end
+
+:meta
+var $prefix
+perform psds_gettoken
+perform psds_inspect_tokenmeta
+end
+
+
+:cleanup
+perform psds_check
+
+var $prefix
+perform psds_gettoken
+perform psds_unload
+end
+
+
+:load
+perform psds_check
+
+var $prefix
+perform psds_gettoken
+ins $oldtoken
+
+var $prefix
+perform psds_createtoken
+ins $token
+ins $psds_prefix
+var $arg
+if "" var P $default_filename
+perform psds_loadfile
+ins $num
+if "-" jump err
+
+var $token
+perform psds_finishtoken
+
+var "Removing data for old token " $oldtoken
+show iV
+var $oldtoken
+perform psds_unload
+ins $unum
+var $unum " entries unloaded for old token " $oldtoken
+show iV
+
+var $num " entries loaded for token " $token
+var + n $unum " entries unloaded for old token " $oldtoken
+mess
+end
+
+
+include psdatasets.flx
+

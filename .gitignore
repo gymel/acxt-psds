@@ -17,6 +17,10 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+# generated files
+README.html
+
+
 # =========================
 # Operating System Files
 # =========================

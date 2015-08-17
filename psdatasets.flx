@@ -1,0 +1,347 @@
+  // manage datasets in "persistent storage"
+  // this file is utf-8 encoded!
+  // $PSDS_NeedsVer=35.0
+
+  // Interface
+  // psds_INIT    initialize
+  //      $PSDS_Store       Index for persistent storage (~z1)
+  //      $PSDS_Namespace   Prefix for _tokens and _prefixes structure (acxt.de:psds)
+  //
+  // psds_check   does the index for $PSDS_Store exist?
+  //
+  // psds_gettoken <prefix>   gets token from <prefix>
+  //
+  // psds_createtoken <prefix>    creates a new token for <prefix>
+  // psds_finishtoken <token>     marks token as current for implied prefix
+  //
+  // psds_loadfile <filename>  loads file for token
+  //      $psds_prefix      token 
+  //
+  // psds_load  loads iV for token ("^T" delimits lines, not yet tested)
+  //
+  // psds_unload <token>    clears all datapoints associated with token
+  //
+  // psds_inspect <prefix>          shows index at token for prefix
+  // psds_inspect_token <token>     shows index at token
+  // psds_inspect_tokenmeta <token> shows meta index ("_...") for token
+
+  // Kommando-Interface
+  // check
+  // inspect <namespace>
+  // inspect_token <token>
+  // inspect_tokenmeta <token>
+  // unload <token>
+  // loadfile <namespace> <file or url>   load contents of utf-8 encoded file
+  // load <namespace>        load iV contents
+  // refresh <namespace> [file or url]
+if "" var #ucc
+ins $
+var (e" ")
+ins $psds_cmd
+var $ (b" ")
+ins $
+
+perform psds_INIT
+
+var $psds_cmd
+if "inspect" var $;jump psds_inspect
+if "check" var $;jump psds_check
+if "unload" var $;jump psds_unload
+if "load" jump psds_loadcmd
+if "refresh" jump psds_refreshcmd
+
+var "Kein gültiges Kommando: " $psds_cmd
+jump psds_error
+
+
+ // Existiert der benoetigte Index?
+:psds_check
+var m (b" v" e".")
+Z=
+Z*100
+var m (b" v" b".")
+Z+
+Z/100
+if Z<$PSDS_NeedsVer var "Benötigt wird allegro Version " $PSDS_NeedsVer " oder neuer, dies ist " m;jump psds_error
+var $PSDS_Store (1,1)
+ins $psds_index
+var D B "." K1 $psds_index "x"
+fsize
+if no var "benötigter Index " $PSDS_Store " existiert nicht!";jump psds_error
+return
+
+:psds_INIT
+$PSDS_NeedsVer=35.00
+if not $PSDS_Store var "~z1";ins $PSDS_Store
+if not $PSDS_Namespace var "acxt.de:ds";ins $PSDS_Namespace
+if $psds_psr jump _psds_psr
+return
+
+  // Resolver: "Externe" Praefixe -> Interne
+  // Get Token from Namespace 
+:psds_gettoken
+ins $
+var "&" $PSDS_Namespace ":_prefixes#" $
+var
+ // ins $psds_tmp
+ // var $PSDS_Namespace ":" $psds_tmp
+if $psds_psr jump _psds_psr
+return
+
+:psds_createtoken
+ins $
+
+:psds_createtoken_waitlock
+keycheck
+if yes var "aborted by user intervention";jump psds_error
+set tbl lock
+if no var "Waiting for Database Lock";xcode u;show iV;jump psds_createtoken_waitlock
+
+z=0
+:psds_createtoken_loop
+z+1
+var pid u z
+ins _/__
+ins _:__
+crypt
+ins $psds_not_random_but_handy
+var "&" $PSDS_Namespace ":_tokens#" $psds_not_random_but_handy
+var
+if not "" jump psds_createtoken_loop
+
+var "&" $PSDS_Namespace ":_tokens#" $psds_not_random_but_handy "=" $
+ins
+
+set tbl free
+
+var $psds_not_random_but_handy
+if $psds_psr jump _psds_psr
+return
+
+
+:psds_removetoken
+ins $
+var "&" $PSDS_Namespace ":_tokens#" $
+var
+if "" var "Token existiert nicht";jump psds_error
+ins $psds_value
+
+var "&" $PSDS_Namespace ":_tokens#" $ "="
+ins
+
+var $psds_value
+if $psds_psr jump _psds_psr
+return
+
+   // prefix as stored in token
+:psds_finishtoken
+ins $psds_token
+var "&" $PSDS_Namespace ":_tokens#" $psds_token
+var
+if "" var "Token " $psds_token " does not exist";jump psds_error
+ins $psds_prefix
+
+var "&" $PSDS_Namespace ":_prefixes#" $psds_prefix "=" $psds_token
+ins
+
+if $psds_psr jump _psds_psr
+return
+
+
+
+:psds_loadcmd
+var $ (b" ")
+ins $psds_prefix
+var $ (e" ")
+
+ // file name in iV
+ // destroys $ (aka iV2)
+ // $psds_prefix - name as prefix
+:psds_loadfile
+ins $psds_filename
+
+ftime
+if no var "Datei " $psds_filename " existiert nicht!";jump psds_error
+ins $psds_filestamp
+
+var $psds_filename
+open
+if no var "Datei " $psds_filename " liess sich nicht öffnen!";jump psds_error
+
+:psds_loadfile_line
+keycheck
+if yes jump _psds_rollback
+
+get
+if cancel jump psds_loadfile_eof
+
+if "" jump psds_loadfile_line
+if " " jump psds_loadfile_line
+xcode u
+if "#" show iV;jump psds_loadfile_line
+ins $psds_line
+
+z+1
+var "&" $psds_prefix "#" $psds_line
+ins
+jump psds_loadfile_line
+
+:psds_loadfile_eof
+close
+
+var "&" $psds_prefix "#_FileName=" $psds_filename
+ins
+var "&" $psds_prefix "#_FileDate=" $psds_filestamp
+ins
+var "&" $psds_prefix "#_LoadDate=" #dts
+ins
+var "&" $psds_prefix "#_Extent=" z
+ins
+
+
+var z
+if $psds_psr jump _psds_psr
+return
+end
+
+
+:_psds_rollback
+close
+var $psds_psr "_psds_rollback_finish" ";"\ins $psds_psr
+var $psds_prefix
+jump psds_unload
+:_psds_rollback_finish
+var "-load operation rolled back!"
+if $psds_psr jump _psds_psr
+return
+end
+
+
+ // tabular data in iV
+ // destroys $ (aka iV2)
+ // $psds_prefix - name as prefix
+:psds_load
+ins $
+z=0
+
+:psds_loadone
+var $ (e"^T")
+if "" jump psds_loadnext
+if " " jump psds_loadnext
+if "#" jump psds_loadnext
+ins $psds_line
+
+z+1
+var "&" $psds_prefix "#" $psds_line
+ins
+
+:psds_loadnext
+var $ (b"^T")
+ins $
+if not "" jump psds_loadone
+
+var z
+if $psds_psr jump _psds_psr
+return
+end
+
+
+  // prefix in iV
+  // destroys $ (aka iV2)
+:psds_unload
+var +"#"
+ins $psds_prefix
+
+z=0
+
+:psds_unload_chunk
+keycheck
+if yes end
+
+var "100" " " $PSDS_Store " _" $psds_prefix
+qrix
+if "" jump psds_unload_finished
+ins $
+
+var "unloading next chunk: " $ (e"^T")
+show iV
+
+:psds_unload_single
+var $ (e"^T" f" " b" " f" ")
+ins $psds_line
+var $psds_prefix
+if not =$psds_line jump psds_unload_finished
+
+z+1
+var "&" $psds_line (e"=") "="
+ins
+
+var $ (b"^T")
+ins $
+if not "" jump psds_unload_single
+jump psds_unload_chunk
+
+:psds_unload_finished
+var "&" $PSDS_Namespace ":_tokens#" $psds_prefix "!/%"
+var (e"?!/%")
+var +"="
+ins
+
+var z
+if $psds_psr jump _psds_psr
+return
+end
+
+  // prefix in iV
+:psds_inspect
+ins $
+var "&" $PSDS_Namespace ":_prefixes#" $
+var
+ // ins $psds_tmp
+ // if not "" var "" $PSDS_Namespace ":_" $psds_tmp
+if "" var "_" $PSDS_Namespace ":_prefixes"
+
+  // token in iV
+:psds_inspect_token
+ins $psds_prefix
+var $PSDS_Store " " $psds_prefix
+index
+if $psds_psr jump _psds_psr
+return
+end
+
+  // token in iV
+:psds_inspect_tokenmeta
+ins $psds_prefix
+var $PSDS_Store " _" $psds_prefix "#_"
+index
+if $psds_psr jump _psds_psr
+return
+end
+
+:psds_error
+xcode u
+ins $psds_tmperr
+ansi
+mess
+var "-" $psds_tmperr
+if $psds_psr jump _psds_psr
+return
+end
+
+
+  // pseudoreturn
+:_psds_psr
+ins $psds_result
+var $psds_psr (e";")
+ins $psds_jmp
+var $psds_psr (b";")
+ins $psds_psr
+var $psds_jmp
+jump
+
+var "FAIL (psds_psr to :" $psds_jmp " with psds_result " $psds_result ")!"
+ansi
+mess
+end
+
