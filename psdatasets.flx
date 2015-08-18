@@ -69,6 +69,10 @@ var D B "." K1 $psds_index "x"
 fsize
 if no var "benötigter Index " $PSDS_Store " existiert nicht!";jump psds_error
 return
+var m " O.K.: Index " $PSDS_Store " existiert"
+ansi
+mess
+end
 
 :psds_INIT
 $PSDS_NeedsVer=35.00
@@ -123,7 +127,7 @@ return
 ins $
 var "&" $PSDS_Namespace ":_tokens#" $
 var
-if "" var "Token existiert nicht";jump psds_error
+if "" var "Token '" $ "' existiert nicht";jump psds_error
 ins $psds_value
 
 var "&" $PSDS_Namespace ":_tokens#" $ "="
